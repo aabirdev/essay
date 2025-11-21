@@ -1,4 +1,4 @@
-export default async function handler(req, res) {
+module.exports = async (req, res) => {
   // Enable CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -12,9 +12,19 @@ export default async function handler(req, res) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { essay, essayType } = req.body;
-
   try {
+    const { essay, essayType } = req.body;
+
+    if (!essay || !essayType) {
+      return res.status(400).json({ error: 'Essay and essay type are required' });
+    }
+
+    // Check if API key exists
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.error('ANTHROPIC_API_KEY not found');
+      return res.status(500).json({ error: 'API key not configured' });
+    }
+
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {
@@ -43,11 +53,25 @@ export default async function handler(req, res) {
   "fixes": ["fix 1", "fix 2", "fix 3"]
 }
 
+Note: 
+- aiProbability should be 0-100 (percentage likelihood the text is AI-generated)
+- confidenceScore should be 0-100 (how confident you are in the detection)
+- Consider factors like: repetitive phrasing, unnatural transitions, generic language, perfect grammar, lack of personal voice, overly formal tone, predictable structure
+
 Essay to analyze:
 ${essay}`
         }]
       })
     });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Anthropic API error:', errorData);
+      return res.status(500).json({ 
+        error: 'Anthropic API error', 
+        details: errorData
+      });
+    }
 
     const data = await response.json();
     const text = data.content
@@ -58,14 +82,13 @@ ${essay}`
     const cleanText = text.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(cleanText);
     
-    res.status(200).json(parsed);
+    return res.status(200).json(parsed);
+    
   } catch (error) {
-    console.error('Error:', error);
-    res.status(500).json({ error: 'Failed to analyze essay' });
+    console.error('Error:', error.message);
+    return res.status(500).json({ 
+      error: 'Failed to analyze essay', 
+      message: error.message
+    });
   }
-}
-```
-
-**3. `.env`** (create this file locally, don't commit it):
-```
-ANTHROPIC_API_KEY=your_api_key_here
+};
