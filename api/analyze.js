@@ -20,24 +20,12 @@ module.exports = async (req, res) => {
     }
 
     // Check if API key exists
-    if (!process.env.ANTHROPIC_API_KEY) {
-      console.error('ANTHROPIC_API_KEY not found');
+    if (!process.env.GEMINI_API_KEY) {
+      console.error('GEMINI_API_KEY not found');
       return res.status(500).json({ error: 'API key not configured' });
     }
 
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': process.env.ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4000,
-        messages: [{
-          role: 'user',
-          content: `You are an expert essay analyst. Analyze this ${essayType} essay and provide feedback in the following JSON format (respond ONLY with valid JSON, no markdown, no preamble):
+    const prompt = `You are an expert essay analyst. Analyze this ${essayType} essay and provide feedback in the following JSON format (respond ONLY with valid JSON, no markdown, no preamble):
 
 {
   "aiDetection": {
@@ -56,29 +44,48 @@ module.exports = async (req, res) => {
 Note: 
 - aiProbability should be 0-100 (percentage likelihood the text is AI-generated)
 - confidenceScore should be 0-100 (how confident you are in the detection)
+- likelihood should be "low", "medium", or "high"
 - Consider factors like: repetitive phrasing, unnatural transitions, generic language, perfect grammar, lack of personal voice, overly formal tone, predictable structure
 
 Essay to analyze:
-${essay}`
-        }]
-      })
-    });
+${essay}`;
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${process.env.GEMINI_API_KEY}`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: prompt
+            }]
+          }],
+          generationConfig: {
+            temperature: 0.7,
+            maxOutputTokens: 2048,
+          }
+        })
+      }
+    );
 
     if (!response.ok) {
       const errorData = await response.json();
-      console.error('Anthropic API error:', errorData);
+      console.error('Gemini API error:', errorData);
       return res.status(500).json({ 
-        error: 'Anthropic API error', 
+        error: 'Gemini API error', 
         details: errorData
       });
     }
 
     const data = await response.json();
-    const text = data.content
-      .filter(item => item.type === 'text')
-      .map(item => item.text)
-      .join('\n');
     
+    // Extract text from Gemini response
+    const text = data.candidates[0].content.parts[0].text;
+    
+    // Clean and parse JSON
     const cleanText = text.replace(/```json|```/g, '').trim();
     const parsed = JSON.parse(cleanText);
     
